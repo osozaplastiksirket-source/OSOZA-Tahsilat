@@ -4,33 +4,65 @@ name: OSOZA APK Olustur
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 jobs:
   build:
+    name: OSOZA APK Derle
     runs-on: ubuntu-24.04
 
+    permissions:
+      contents: read
+
     steps:
-      - name: Projeyi al
+      - name: Projeyi indir
         uses: actions/checkout@v4
 
-      - name: Java kur
+      - name: Java 17 kur
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android kur
-        uses: android-actions/setup-android@v3
-
-      - name: Gradle kur
+      - name: Gradle 8.9 kur
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      - name: Android SDK hazirla
+        shell: bash
+        run: |
+          set -e
+
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Android sdkmanager bulunamadi."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
       - name: OSOZA Android projesini olustur
         shell: bash
         run: |
+          set -e
+
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/osoza/tahsilat
 
@@ -42,6 +74,7 @@ jobs:
                   gradlePluginPortal()
               }
           }
+
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
@@ -49,6 +82,7 @@ jobs:
                   mavenCentral()
               }
           }
+
           rootProject.name = 'OSOZA'
           include ':app'
           EOF
@@ -75,22 +109,31 @@ jobs:
                   versionCode 1
                   versionName '1.0'
               }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
               <application
                   android:label="OSOZA Tahsilat"
-                  android:usesCleartextTraffic="false"
-                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:usesCleartextTraffic="false">
+
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
+
                   </activity>
               </application>
           </manifest>
@@ -111,9 +154,11 @@ jobs:
           import android.util.Base64;
 
           public class MainActivity extends Activity {
-              WebView web;
+
+              private WebView web;
 
               public class Bridge {
+
                   @JavascriptInterface
                   public String loadRecords() {
                       return getPreferences(0)
@@ -123,37 +168,59 @@ jobs:
                   @JavascriptInterface
                   public void saveRecords(String data) {
                       getPreferences(0).edit()
-                          .putString("records", data).apply();
+                          .putString("records", data)
+                          .apply();
                   }
 
                   @JavascriptInterface
                   public void saveJpeg(String name, String data) {
                       try {
+                          String raw = data;
+
+                          if (raw.contains(",")) {
+                              raw = raw.substring(raw.indexOf(",") + 1);
+                          }
+
                           byte[] bytes = Base64.decode(
-                              data, Base64.DEFAULT);
+                              raw,
+                              Base64.DEFAULT
+                          );
 
                           ContentValues values = new ContentValues();
+
                           values.put(
                               MediaStore.Images.Media.DISPLAY_NAME,
-                              name.endsWith(".jpg") ? name : name + ".jpg");
+                              name.endsWith(".jpg")
+                                  ? name
+                                  : name + ".jpg"
+                          );
+
                           values.put(
                               MediaStore.Images.Media.MIME_TYPE,
-                              "image/jpeg");
+                              "image/jpeg"
+                          );
+
                           values.put(
                               MediaStore.Images.Media.RELATIVE_PATH,
-                              Environment.DIRECTORY_PICTURES + "/OSOZA");
+                              Environment.DIRECTORY_PICTURES + "/OSOZA"
+                          );
 
-                          android.net.Uri uri = getContentResolver()
-                              .insert(
+                          android.net.Uri uri =
+                              getContentResolver().insert(
                                   MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                  values);
+                                  values
+                              );
 
                           if (uri != null) {
-                              try (java.io.OutputStream out =
-                                  getContentResolver().openOutputStream(uri)) {
+                              try (
+                                  java.io.OutputStream out =
+                                      getContentResolver()
+                                          .openOutputStream(uri)
+                              ) {
                                   out.write(bytes);
                               }
                           }
+
                       } catch (Exception e) {
                           e.printStackTrace();
                       }
@@ -163,17 +230,34 @@ jobs:
               @Override
               public void onCreate(Bundle state) {
                   super.onCreate(state);
+
                   web = new WebView(this);
                   setContentView(web);
 
                   web.getSettings().setJavaScriptEnabled(true);
                   web.getSettings().setDomStorageEnabled(true);
                   web.getSettings().setAllowFileAccess(true);
-                  web.addJavascriptInterface(new Bridge(), "Android");
+
+                  web.addJavascriptInterface(
+                      new Bridge(),
+                      "Android"
+                  );
+
                   web.setWebViewClient(new WebViewClient());
                   web.setWebChromeClient(new WebChromeClient());
 
-                  web.loadUrl("file:///android_asset/index.html");
+                  web.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (web != null && web.canGoBack()) {
+                      web.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
               }
           }
           EOF
@@ -181,14 +265,19 @@ jobs:
           if [ -f "index.html" ]; then
             cp index.html app/src/main/assets/index.html
           elif [ -f "app/src/main/assets/index.html" ]; then
-            echo "HTML dosyasi bulundu"
+            echo "HTML dosyasi bulundu."
           else
-            echo "HATA: index.html dosyasi eksik!"
+            echo "HATA: index.html bulunamadi."
+            echo "GitHub ana dizinine index.html yukleyin."
             exit 1
           fi
 
+          echo "Android projesi hazir."
+
       - name: APK olustur
-        run: gradle --no-daemon assembleDebug
+        shell: bash
+        run: |
+          gradle --no-daemon --stacktrace assembleDebug
 
       - name: APK indirilebilir yap
         uses: actions/upload-artifact@v4
