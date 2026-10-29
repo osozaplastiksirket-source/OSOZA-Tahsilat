@@ -1,0 +1,198 @@
+
+name: OSOZA APK Olustur
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Projeyi al
+        uses: actions/checkout@v4
+
+      - name: Java kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android kur
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle kur
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: OSOZA Android projesini olustur
+        shell: bash
+        run: |
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/java/com/osoza/tahsilat
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'OSOZA'
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.osoza.tahsilat'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.osoza.tahsilat'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:label="OSOZA Tahsilat"
+                  android:usesCleartextTraffic="false"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/osoza/tahsilat/MainActivity.java <<'EOF'
+          package com.osoza.tahsilat;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.webkit.WebChromeClient;
+          import android.webkit.JavascriptInterface;
+          import android.content.ContentValues;
+          import android.provider.MediaStore;
+          import android.os.Environment;
+          import android.util.Base64;
+
+          public class MainActivity extends Activity {
+              WebView web;
+
+              public class Bridge {
+                  @JavascriptInterface
+                  public String loadRecords() {
+                      return getPreferences(0)
+                          .getString("records", "[]");
+                  }
+
+                  @JavascriptInterface
+                  public void saveRecords(String data) {
+                      getPreferences(0).edit()
+                          .putString("records", data).apply();
+                  }
+
+                  @JavascriptInterface
+                  public void saveJpeg(String name, String data) {
+                      try {
+                          byte[] bytes = Base64.decode(
+                              data, Base64.DEFAULT);
+
+                          ContentValues values = new ContentValues();
+                          values.put(
+                              MediaStore.Images.Media.DISPLAY_NAME,
+                              name.endsWith(".jpg") ? name : name + ".jpg");
+                          values.put(
+                              MediaStore.Images.Media.MIME_TYPE,
+                              "image/jpeg");
+                          values.put(
+                              MediaStore.Images.Media.RELATIVE_PATH,
+                              Environment.DIRECTORY_PICTURES + "/OSOZA");
+
+                          android.net.Uri uri = getContentResolver()
+                              .insert(
+                                  MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                  values);
+
+                          if (uri != null) {
+                              try (java.io.OutputStream out =
+                                  getContentResolver().openOutputStream(uri)) {
+                                  out.write(bytes);
+                              }
+                          }
+                      } catch (Exception e) {
+                          e.printStackTrace();
+                      }
+                  }
+              }
+
+              @Override
+              public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  web = new WebView(this);
+                  setContentView(web);
+
+                  web.getSettings().setJavaScriptEnabled(true);
+                  web.getSettings().setDomStorageEnabled(true);
+                  web.getSettings().setAllowFileAccess(true);
+                  web.addJavascriptInterface(new Bridge(), "Android");
+                  web.setWebViewClient(new WebViewClient());
+                  web.setWebChromeClient(new WebChromeClient());
+
+                  web.loadUrl("file:///android_asset/index.html");
+              }
+          }
+          EOF
+
+          if [ -f "index.html" ]; then
+            cp index.html app/src/main/assets/index.html
+          elif [ -f "app/src/main/assets/index.html" ]; then
+            echo "HTML dosyasi bulundu"
+          else
+            echo "HATA: index.html dosyasi eksik!"
+            exit 1
+          fi
+
+      - name: APK olustur
+        run: gradle --no-daemon assembleDebug
+
+      - name: APK indirilebilir yap
+        uses: actions/upload-artifact@v4
+        with:
+          name: OSOZA-Tahsilat-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
