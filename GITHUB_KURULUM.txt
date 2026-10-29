@@ -1,0 +1,13 @@
+OSOZA TAHSILAT - GITHUB ILE APK
+
+1. github.com adresinde oturum acin, New repository secin.
+2. Repository adini OSOZA-Tahsilat yazin. Tahsilat verilerini GitHub'a yuklemeyin.
+3. Bu ZIP'i bilgisayarda acin. ZIP icindeki dosya ve klasorleri repo kokune yukleyin (Add file > Upload files).
+   .github klasoru da dahil olmali. Dosyalari bir ust klasorun icine koymayin.
+4. Commit changes'e basin.
+5. Actions > OSOZA Android APK > Run workflow (veya push sonrasi otomatik)
+6. Yesil tik gorundugunde calismayi acin; Artifacts altindan OSOZA-Tahsilat-APK dosyasini indirin.
+7. ZIP icindeki app-debug.apk dosyasini Android telefona gonderin ve yukleyin.
+
+Not: Bu test icin imzalanmis DEBUG APK'dir. Play Store dagitimi icin release imzasi gerekir.
+Uygulama kayitlari GitHub'a gitmez; telefonda saklanir.
